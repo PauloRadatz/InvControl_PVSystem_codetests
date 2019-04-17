@@ -23,7 +23,6 @@ class Reports:
 
 
     def set_scenario(self, scenario):
-        """ Seta o cenário ativo para o objeto GeraRel"""
         self.scenario = scenario
         self.drop_columns()
 
@@ -91,19 +90,19 @@ class Reports:
             Pbase = self.scenario.Pmpp * self.scenario.pctPmpp / 100.0
         elif self.scenario.Pava == "PMPPPU":
             Pbase = self.scenario.Pmpp
+        elif self.scenario.Pava == "KVARATING":
+            Pbase = self.scenario.kVA
 
         if self.scenario.VV:
             self.get_VV_curve()
 
-            if self.scenario.Vref == "rated":
-                self.df_calculated_power_results["QVV Calculated"] = (self.df_OpenDSS_voltage_results["aVV"] * self.df_OpenDSS_voltage_results["v1 (pu)"] + self.df_OpenDSS_voltage_results["bVV"]) * Qbase
-            else:
-                self.df_calculated_power_results["QVV Calculated"] = (self.df_OpenDSS_voltage_results["aVV"] * self.df_OpenDSS_internal_results["Vreg"] + self.df_OpenDSS_voltage_results["bVV"]) * Qbase
+            self.df_calculated_power_results["QVV Calculated"] = \
+                (self.df_OpenDSS_voltage_results["aVV"] * self.df_OpenDSS_internal_results["Vreg"] + self.df_OpenDSS_voltage_results["bVV"]) * Qbase
 
             Qtotal["Qtotal"] = self.df_calculated_power_results["QVV Calculated"]
         if self.scenario.VW:
             self.get_VW_curve()
-            self.df_calculated_power_results["PVW Calculated"] = (self.df_OpenDSS_voltage_results["aVW"] * self.df_OpenDSS_voltage_results["v1 (pu)"] + self.df_OpenDSS_voltage_results["bVW"]) * Pbase
+            self.df_calculated_power_results["PVW Calculated"] = (self.df_OpenDSS_voltage_results["aVW"] * self.df_OpenDSS_voltage_results["Vreg"] + self.df_OpenDSS_voltage_results["bVW"]) * Pbase
             Ptotal["Ptotal"] = self.df_calculated_power_results["PVW Calculated"]
         if self.scenario.DRC:
 
@@ -125,15 +124,13 @@ class Reports:
             self.df_calculated_power_results["Qtotal Calculated"] = Qtotal
 
         if self.scenario.P_LPF:
-            self.get_P_LPF()
+            self.get_P_LPF(Ptotal)
 
         elif self.scenario.P_RF:
             self.df_calculated_power_results["delta P"] = Pbase * self.scenario.delta_P
-            self.get_P_RF()
+            self.get_P_RF(Ptotal)
         else:
             self.df_calculated_power_results["Ptotal Calculated"] = Ptotal
-
-
 
     def creates_results_report(self):
         df = [self.df_OpenDSS_power_results, self.df_OpenDSS_voltage_results, self.df_OpenDSS_internal_results, self.df_calculated_power_results]
@@ -169,13 +166,13 @@ class Reports:
                 coef_dic[i] = [m, b]
 
 
-        for index, voltage in self.df_OpenDSS_voltage_results.iterrows():
+        for index, voltage in self.df_OpenDSS_internal_results.iterrows():
             m = np.nan
             b = np.nan
             for i in range(len(self.scenario.VV_x)):
 
                 if i != 0:
-                    if voltage["v1 (pu)"] >= self.scenario.VV_x[i-1] and voltage["v1 (pu)"] < self.scenario.VV_x[i]:
+                    if voltage["Vreg"] >= self.scenario.VV_x[i-1] and voltage["Vreg"] < self.scenario.VV_x[i]:
 
                         m = coef_dic[i][0]
                         b = coef_dic[i][1]
@@ -202,14 +199,14 @@ class Reports:
                 coef_dic[i] = [m, b]
 
 
-        for index, voltage in self.df_OpenDSS_voltage_results.iterrows():
+        for index, voltage in self.df_OpenDSS_internal_results.iterrows():
             m = np.nan
             b = np.nan
             for i in range(len(self.scenario.VW_x)):
 
 
                 if i != 0:
-                    if voltage["v1 (pu)"] >= self.scenario.VW_x[i - 1] and voltage["v1 (pu)"] < self.scenario.VW_x[i]:
+                    if voltage["Vreg"] >= self.scenario.VW_x[i - 1] and voltage["Vreg"] < self.scenario.VW_x[i]:
                         m = coef_dic[i][0]
                         b = coef_dic[i][1]
 
@@ -223,36 +220,35 @@ class Reports:
     def get_Q_LPF(self, Q):
 
         Q_LPF_list = []
-        Q_prior = 0.0
 
         for index, q in Q.iterrows():
 
             if index == 0:
                 Q_LPF_list.append(q["Qtotal"] * (1 - self.scenario.alpha))
+
+                Q_prior = q["Qtotal"] * (1 - self.scenario.alpha)
             else:
                 Q_LPF_list.append(q["Qtotal"] * (1 - self.scenario.alpha) + Q_prior * self.scenario.alpha)
 
-            Q_prior = self.df_OpenDSS_power_results.iloc[index]["Qtotal"]
+                Q_prior = q["Qtotal"] * (1 - self.scenario.alpha) + Q_prior * self.scenario.alpha
 
         self.df_calculated_power_results["Q LPF or RF Calculated"] = Q_LPF_list
-        self.df_calculated_power_results["Qtotal Calculated"] = self.df_calculated_power_results["Q LPF or RF Calculated"]
 
-    def get_P_LPF(self):
+    def get_P_LPF(self, P):
 
         P_LPF_list = []
         P_prior = 0.0
 
-        for index, p in self.df_OpenDSS_internal_results.iterrows():
+        for index, p in P.iterrows():
 
             if index == 0:
-                P_LPF_list.append(p["kW_out_desired"] * (1 - self.scenario.alpha))
+                P_LPF_list.append(p["Ptotal"] * (1 - self.scenario.alpha))
             else:
-                P_LPF_list.append(p["kW_out_desired"] * (1 - self.scenario.alpha) + P_prior * self.scenario.alpha)
+                P_LPF_list.append(p["Ptotal"] * (1 - self.scenario.alpha) + P_prior * self.scenario.alpha)
 
-            P_prior = self.df_OpenDSS_power_results.iloc[index]["Ptotal"]
+            P_prior = P_LPF_list[index]
 
         self.df_calculated_power_results["PVW LPF or RF Calculated"] = P_LPF_list
-        self.df_calculated_power_results["Ptotal Calculated"] = self.df_calculated_power_results["PVW LPF or RF Calculated"]
 
     def get_Q_RF(self, Q):
 
@@ -289,42 +285,41 @@ class Reports:
 
             Q_RF_list.append(temp2)
 
-            Q_prior = self.df_OpenDSS_power_results.iloc[index]["Qtotal"]
+            Q_prior = temp2
 
         self.df_calculated_power_results["Q LPF or RF Calculated"] = Q_RF_list
-        self.df_calculated_power_results["Qtotal Calculated"] = Q_RF_total_list
 
-    def get_P_RF(self):
+    def get_P_RF(self, P):
 
         P_RF_list = []
         P_RF_total_list = []
         P_prior = 0.0
 
-        for index, p1 in self.df_OpenDSS_internal_results.iterrows():
+        for index, p1 in P.iterrows():
 
             delta_P = self.df_calculated_power_results.iloc[index]["delta P"]
 
             if index == 0:
                 p =  delta_P * self.scenario.step
-                temp = min(p1["kW_out_desired"],p)
+                temp = min(p1["Ptotal"],p)
                 P_RF_total_list.append(temp)
                 temp2 = p
 
             else:
-                if (p1["kW_out_desired"] - P_prior) < 0:
+                if (p1["Ptotal"] - P_prior) < 0:
                     p = - delta_P * self.scenario.step
-                    temp = P_prior + max((p1["kW_out_desired"] - P_prior), p)
+                    temp = P_prior + max((p1["Ptotal"] - P_prior), p)
                     P_RF_total_list.append(temp)
                     temp2 = P_prior + p
                 else:
                     p = delta_P * self.scenario.step
-                    temp = P_prior + min((p1["kW_out_desired"] - P_prior), p)
+                    temp = P_prior + min((p1["Ptotal"] - P_prior), p)
                     P_RF_total_list.append(temp)
                     temp2 = P_prior + p
 
             P_RF_list.append(temp2)
 
-            P_prior = self.df_OpenDSS_power_results.iloc[index]["Ptotal"]
+            P_prior = temp2
 
         self.df_calculated_power_results["PVW LPF or RF Calculated"] = P_RF_list
         self.df_calculated_power_results["Ptotal Calculated"] = P_RF_total_list
