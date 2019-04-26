@@ -102,7 +102,7 @@ class Reports:
             Qtotal["Qtotal"] = self.df_calculated_power_results["QVV Calculated"]
         if self.scenario.VW:
             self.get_VW_curve()
-            self.df_calculated_power_results["PVW Calculated"] = (self.df_OpenDSS_voltage_results["aVW"] * self.df_OpenDSS_voltage_results["Vreg"] + self.df_OpenDSS_voltage_results["bVW"]) * Pbase
+            self.df_calculated_power_results["PVW Calculated"] = (self.df_OpenDSS_voltage_results["aVW"] * self.df_OpenDSS_internal_results["Vreg"] + self.df_OpenDSS_voltage_results["bVW"]) * Pbase
             Ptotal["Ptotal"] = self.df_calculated_power_results["PVW Calculated"]
         if self.scenario.DRC:
 
